@@ -7,16 +7,16 @@ dotenv.config();
 import { Request, Response, NextFunction } from 'express';
 import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 
 //2. Configuration 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const SECRET_KEY = process.env.SECRET_KEY || 'your_secret_key'; // กำหนด secret key สำหรับ JWT
 
 app.use(express.json()); //ใช้ middleware เพื่อให้สามารถรับข้อมูล JSON ได้
 app.use(express.urlencoded({ extended: true })); //เพื่อให้สามารถรับข้อมูลจาก HTML Form ได้
 app.use(cors());// อนุญาตให้ API ถูกเรียกจากโดเมนอื่น
-
-
 
 // MySQL Connection
 const db = mysql.createConnection({
@@ -30,6 +30,28 @@ db.connect();
 
 //3. Defining API Endpoints
 //สร้างฟังก์ชัน query เพื่อใช้ในการ query ข้อมูลและลดความซ้ำซ้อนในการเขียน
+// Interface for JWT payload
+
+interface JwtPayload {
+ custID: number;
+ username: string;
+ positionID?: number;
+}
+
+// Function to validate JWT token
+function validateToken(req: Request, res: Response, next: NextFunction) {
+ const token = req.headers['authorization']?.split(' ')[1];
+ if (!token) return res.status(401).json({ message: 'Access denied' });
+
+ try {
+  const decoded = jwt.verify(token, SECRET_KEY) as JwtPayload;
+  (req as any).user = decoded;
+  next();
+ } catch (err) {
+  res.status(403).json({ message: 'Invalid token' });
+ }
+}
+
 app.get('/',(req, res) => {
     res.send('hello, world');
 });
@@ -219,6 +241,60 @@ app.post('/api/register', [
  } catch (err) {
   next(err);
  }
+});
+
+// Login 
+app.post('/api/login', [
+ body('username').isString().notEmpty().withMessage('Username is required'),
+ body('password').isString().notEmpty().withMessage('Password is required')
+], async (req: Request, res: Response, next: NextFunction) => {
+ const errors = validationResult(req);
+ if (!errors.isEmpty()) {
+  return res.status(400).send({ message: 'Validation errors', errors: errors.array(), status: false });
+ }
+
+ const { username, password } = req.body;
+ try {
+  const customer = await query("SELECT * FROM customer WHERE username=? AND isActive = 1", [username]);
+  if (customer.length === 0) {
+   return res.status(401).send({ message: 'Invalid username or password', status: false });
+  }
+
+  const isPasswordValid = bcrypt.compareSync(password, customer[0].password);
+  if (!isPasswordValid) {
+   return res.status(401).send({ message: 'Invalid username or password', status: false });
+  }
+
+  const token = jwt.sign({ custID: customer[0].custID, username: customer[0].username }, SECRET_KEY, { expiresIn: '1h' });
+  res.send({ custID: customer[0].custID, username, email: customer[0].email, token, message: 'Login successful', status: true });
+ } catch (err) {
+  next(err);
+ }
+});
+
+// User Profile
+app.get('/api/profile/:id', validateToken, async (req: Request, res: Response, next: NextFunction) => {
+  const custID = req.params.id;
+  const user = (req as any).user as JwtPayload;
+  if (Number(custID) !== user.custID) {
+    return res.status(403).send({ message: 'Access denied', status: false });
+  }
+
+  try {
+    const customer = await query(`
+      SELECT custID, username, firstName, lastName, address, mobilePhone, gender, email, imageFile,
+             IF(birthdate IS NOT NULL, DATE_FORMAT(birthdate, '%Y-%m-%d'), NULL) AS birthdate
+      FROM customer 
+      WHERE custID = ? AND isActive = 1`, [custID]);
+
+    if (customer.length === 0) {
+      return res.status(404).send({ message: 'Customer not found', status: false });
+    }
+
+    res.send({ ...customer[0], message: 'Success', status: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 //4. starting web browser
