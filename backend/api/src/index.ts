@@ -9,6 +9,7 @@ import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken'
 import path from 'path';
+import multer from 'multer';
 
 //2. Configuration 
 const app = express();
@@ -28,6 +29,20 @@ const db = mysql.createConnection({
     port: Number(process.env.DB_PORT) || 3306
 });
 db.connect();
+
+// กำหนด storage สำหรับ multer
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '../assets/customer'));
+  },
+  filename: function (req, file, cb) {
+    // ตั้งชื่อไฟล์ตาม custID
+    const custID = req.params.custID;
+    const ext = path.extname(file.originalname);
+    cb(null, `profile_${custID}${ext}`);
+  }
+});
+const upload = multer({ storage: storage });
 
 //3. Routing API
 // Interface for JWT payload
@@ -157,23 +172,92 @@ app.get('/api/customer/:custID', async (req, res) => {
 app.put('/api/customer/:custID', async (req, res) => {
  try {
   const { custID } = req.params;
-  const { username, password, firstName, lastName } = req.body;
+  const {
+    username,
+    password,
+    firstName,
+    lastName,
+    address,
+    mobilePhone,
+    birthdate,
+    gender,
+    email,
+    imageFile
+  } = req.body;
+
+  // เตรียมข้อมูลสำหรับอัพเดต
+  let updateFields: string[] = [];
+  let updateValues: any[] = [];
+
+  if (username !== undefined) {
+    updateFields.push('username = ?');
+    updateValues.push(username);
+  }
+  if (password !== undefined && password !== '') {
+    // hash password ใหม่
+    const salt = await bcrypt.genSalt(10);
+    const password_hash = await bcrypt.hash(password, salt);
+    updateFields.push('password = ?');
+    updateValues.push(password_hash);
+  }
+  if (firstName !== undefined) {
+    updateFields.push('firstName = ?');
+    updateValues.push(firstName);
+  }
+  if (lastName !== undefined) {
+    updateFields.push('lastName = ?');
+    updateValues.push(lastName);
+  }
+  if (address !== undefined) {
+    updateFields.push('address = ?');
+    updateValues.push(address);
+  }
+  if (mobilePhone !== undefined) {
+    updateFields.push('mobilePhone = ?');
+    updateValues.push(mobilePhone);
+  }
+  if (birthdate !== undefined) {
+    updateFields.push('birthdate = ?');
+    updateValues.push(birthdate);
+  }
+  if (gender !== undefined) {
+    updateFields.push('gender = ?');
+    updateValues.push(gender);
+  }
+  if (email !== undefined) {
+    updateFields.push('email = ?');
+    updateValues.push(email);
+  }
+  if (imageFile !== undefined) {
+    updateFields.push('imageFile = ?');
+    updateValues.push(imageFile);
+  }
+
+  if (updateFields.length === 0) {
+    return res.status(400).json({
+      status: false,
+      message: 'No fields to update'
+    });
+  }
+
   const sql = `
-   UPDATE customer
-   SET username = ?, password = ?, firstName = ?, lastName = ?
-   WHERE custID = ?
+    UPDATE customer
+    SET ${updateFields.join(', ')}
+    WHERE custID = ?
   `;
-  const result = await query(sql, [username, password, firstName, lastName, custID]);
+  updateValues.push(custID);
+
+  const result = await query(sql, updateValues);
   if (result.affectedRows === 0) {
-   res.status(404).json({
-    status: false,
-    message: 'Customer not found'
-   });
+    res.status(404).json({
+      status: false,
+      message: 'Customer not found'
+    });
   } else {
-   res.json({
-    status: true,
-    message: 'Customer updated successfully'
-   });
+    res.json({
+      status: true,
+      message: 'Customer updated successfully'
+    });
   }
  } catch (err) {
   res.status(500).json({
@@ -297,6 +381,22 @@ app.get('/api/profile/:id', validateToken, async (req: Request, res: Response, n
 app.get('/api/customer/image/:filename', (req: Request, res: Response) => {
   const filepath = path.join(__dirname, '../assets', 'customer', req.params.filename);
   res.sendFile(filepath);
+});
+
+// API สำหรับอัปโหลดรูปโปรไฟล์
+app.post('/api/customer/image/upload/:custID', upload.single('imageFile'), async (req: Request, res: Response) => {
+  try {
+    const { custID } = req.params;
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ status: false, message: 'No file uploaded' });
+    }
+    // อัปเดตชื่อไฟล์ใน DB
+    await query('UPDATE customer SET imageFile = ? WHERE custID = ?', [file.filename, custID]);
+    res.json({ status: true, message: 'Image uploaded successfully', filename: file.filename });
+  } catch (err) {
+    res.status(500).json({ status: false, message: 'Failed to upload image' });
+  }
 });
 
 //4. Start Web Server

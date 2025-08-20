@@ -1,7 +1,6 @@
 // 4.1 ส่วนที่ 1
 // ส่วนที่ 1: การ import libraries และไฟล์ที่เกี่ยวข้อง
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
 import 'src/home.dart';
 import 'src/cart.dart';
 import 'src/history.dart';
@@ -31,8 +30,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// 4.3 ส่วนที่ 3
-// ส่วนที่ 3: MyApp คือ StatelessWidget ที่ไม่ต้องการเปลี่ยนแปลงค่าหรือสถานะในระหว่างที่แอพทำงาน
+// ----------------- หน้า Home -----------------
 class HomePage extends StatelessWidget {
   const HomePage({Key? key}) : super(key: key);
 
@@ -83,27 +81,7 @@ class HistoryPage extends StatelessWidget {
   }
 }
 
-// ----------------- หน้า Account -----------------
-class AccountPage extends StatelessWidget {
-  const AccountPage({Key? key}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Account'),
-      ),
-      body: const Center(
-        child: Text('Account Page'),
-      ),
-    );
-  }
-}
-
 // ----------------- Main -----------------
-
-
-
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
   final String title;
@@ -119,7 +97,7 @@ class _MyHomePageState extends State<MyHomePage> {
     const HomePage(),
     const CartPage(),
     const HistoryPage(),
-    const AccountPage(),
+    const AccountPage(), // <-- ใช้ AccountPage จาก src/account.dart
   ];
 
   void _onItemTapped(int index) {
