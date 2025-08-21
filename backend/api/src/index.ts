@@ -10,6 +10,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken'
 import path from 'path';
 import multer from 'multer';
+import fs from "fs";
+import fileUpload, { UploadedFile } from "express-fileupload";
 
 //2. Configuration 
 const app = express();
@@ -19,6 +21,7 @@ const SECRET_KEY = process.env.SECRET_KEY || "938!938Ab";
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+app.use(fileUpload());
 
 // MySQL Database Connection
 const db = mysql.createConnection({
@@ -398,6 +401,70 @@ app.post('/api/customer/image/upload/:custID', upload.single('imageFile'), async
     res.status(500).json({ status: false, message: 'Failed to upload image' });
   }
 });
+
+// Uploading Image Profile API
+app.put(
+  "/api/customer/image/upload/:id", validateToken,
+  async (req: Request, res: Response) => {
+
+    const custID = req.params.id;
+
+    //กำหนดให้ user รับค่าจาก req (token) และมีชนิดเป็น JwtPayload
+    const user = (req as any).user as JwtPayload; 
+
+    if (Number(custID) !== user.custID) {
+        return res.status(403).send({ message: 'Access denied', status: false });
+    } 
+
+    try {
+        // save file into folder
+        let fileName = "";
+        if (
+            req.files &&
+            typeof req.files === "object" &&
+            "imageFile" in req.files
+        ) {
+            const imageFile = ((req.files as unknown) as { [fieldname: string]: UploadedFile | UploadedFile[] }).imageFile as UploadedFile;
+            const nameParts = imageFile.name.split(".");
+            const ext = nameParts.pop();
+            const baseName = nameParts.join(".");
+            fileName = `${baseName}${Date.now()}.${ext}`;
+
+            const imagePath = path.join(__dirname, "../assets/customer", fileName);
+
+            fs.writeFile(imagePath, imageFile.data, (err) => {
+                if (err) throw err;
+            });
+
+        } else {
+            return res.send({
+                message: "กรุณาเลือกไฟล์รูปภาพ",
+                status: false,
+            });
+        }
+
+        const sql = `UPDATE customer SET imageFile = ? WHERE custID = ?`;
+        const result = await query(sql, [fileName, custID]);
+        if (result.affectedRows === 0) {
+                res.status(404).json({
+                status: false,
+                message: 'Customer not found'
+            });
+        } else {
+            res.json({
+                status: true,
+                message: 'Profile picture updated successfully'
+            });
+        }
+    } catch (err) {        
+        res.status(500).json({
+            status: false,
+            message: 'Failed to upload image'
+        });
+    }
+
+  }
+);
 
 //4. Start Web Server
 app.listen(PORT, 
